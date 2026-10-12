@@ -1,0 +1,59 @@
+@page "/history"
+@inject IWorkoutStorageService Storage
+
+<PageTitle>Gym Tracker - History</PageTitle>
+
+<h3>History</h3>
+
+@if (_sessions is null)
+{
+    <p>Loading...</p>
+}
+else if (_sessions.Count == 0)
+{
+    <p class="text-muted">No workouts logged yet.</p>
+}
+else
+{
+    @foreach (var session in _sessions)
+    {
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><strong>@session.DayName</strong> - @session.Date.ToString("ddd, d MMM yyyy")</span>
+                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSession(session.Id)">Delete</button>
+            </div>
+            <div class="card-body">
+                @foreach (var exercise in session.Exercises.Where(ex => ex.Sets.Count > 0))
+                {
+                    <div class="mb-2">
+                        <div class="fw-bold">@exercise.ExerciseName</div>
+                        <div class="small">
+                            @string.Join(", ", exercise.Sets.Select(s => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}"))
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private List<Models.WorkoutSession>? _sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var all = await Storage.GetAllSessionsAsync();
+        _sessions = all.OrderByDescending(s => s.Date).ToList();
+    }
+
+    private async Task DeleteSession(Guid id)
+    {
+        await Storage.DeleteSessionAsync(id);
+        await Load();
+    }
+}

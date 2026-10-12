@@ -1,0 +1,95 @@
+@using GymTracker.App.Models
+
+<div class="card exercise-card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold">@Exercise.Name</span>
+        @if (PreviousSets.Count > 0)
+        {
+            <small class="text-muted">Last time: @string.Join(", ", PreviousSets.Select(FormatSet))</small>
+        }
+    </div>
+    <div class="card-body">
+        @if (Log.Sets.Count > 0)
+        {
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Weight (kg)</th>
+                        <th>Reps</th>
+                        <th>Warmup</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < Log.Sets.Count; i++)
+                    {
+                        var set = Log.Sets[i];
+                        <tr>
+                            <td>@(i + 1)</td>
+                            <td>@set.Weight</td>
+                            <td>@set.Reps</td>
+                            <td>@(set.IsWarmup ? "Yes" : "")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveSet(set)">✕</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <div class="row g-2 add-set-row">
+            <div class="col-6">
+                <label class="form-label small mb-0">Weight (kg)</label>
+                <input type="number" step="2.5" class="form-control form-control-lg" @bind="_weight" />
+            </div>
+            <div class="col-6">
+                <label class="form-label small mb-0">Reps</label>
+                <input type="number" step="1" class="form-control form-control-lg" @bind="_reps" />
+            </div>
+            <div class="col-6 form-check d-flex align-items-center">
+                <input type="checkbox" class="form-check-input" id="@($"warmup-{Exercise.Name}")" @bind="_isWarmup" />
+                <label class="form-check-label ms-2" for="@($"warmup-{Exercise.Name}")">Warmup</label>
+            </div>
+            <div class="col-6">
+                <button class="btn btn-primary btn-lg w-100" @onclick="AddSet">Add Set</button>
+            </div>
+        </div>
+        @if (Exercise.AllowsNegativeWeight)
+        {
+            <small class="text-muted d-block mt-1">Machine-assisted: use a negative weight for assistance.</small>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExerciseDefinition Exercise { get; set; } = null!;
+    [Parameter, EditorRequired] public ExerciseLog Log { get; set; } = null!;
+    [Parameter] public List<SetEntry> PreviousSets { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private decimal _weight;
+    private int _reps;
+    private bool _isWarmup;
+
+    private async Task AddSet()
+    {
+        Log.Sets.Add(new SetEntry
+        {
+            Weight = _weight,
+            Reps = _reps,
+            IsWarmup = _isWarmup,
+        });
+        _isWarmup = false;
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task RemoveSet(SetEntry set)
+    {
+        Log.Sets.Remove(set);
+        await OnChanged.InvokeAsync();
+    }
+
+    private static string FormatSet(SetEntry s) => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}";
+}

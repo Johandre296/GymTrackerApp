@@ -1,0 +1,89 @@
+@page "/"
+@using GymTracker.App.Data
+@inject IWorkoutStorageService Storage
+
+<PageTitle>Gym Tracker - Workout</PageTitle>
+
+<div class="mb-3">
+    <label class="form-label small mb-0">Workout day</label>
+    <select class="form-select form-select-lg" value="@_selectedDayName" @onchange="OnDayChanged">
+        @foreach (var day in WorkoutProgram.Days)
+        {
+            <option value="@day.DayName">@day.DayName - @day.FocusLabel</option>
+        }
+    </select>
+    <small class="text-muted">@_today.ToString("dddd, d MMMM yyyy")</small>
+</div>
+
+@if (_session is not null && _dayProgram is not null)
+{
+    <ExerciseLogCard Exercise="_dayProgram.MainLift"
+                      Log="GetLog(_dayProgram.MainLift.Name)"
+                      PreviousSets="_mainPrevious"
+                      OnChanged="SaveSession" />
+
+    <ExerciseLogCard Exercise="_dayProgram.AssistLift"
+                      Log="GetLog(_dayProgram.AssistLift.Name)"
+                      PreviousSets="_assistPrevious"
+                      OnChanged="SaveSession" />
+}
+else
+{
+    <p>Loading...</p>
+}
+
+@code {
+    private DateOnly _today;
+    private string _selectedDayName = string.Empty;
+    private Models.DayProgram? _dayProgram;
+    private Models.WorkoutSession? _session;
+    private List<Models.SetEntry> _mainPrevious = new();
+    private List<Models.SetEntry> _assistPrevious = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = DateOnly.FromDateTime(DateTime.Now);
+        _dayProgram = WorkoutProgram.GetForToday();
+        _selectedDayName = _dayProgram.DayName;
+        await LoadSession();
+    }
+
+    private async Task OnDayChanged(ChangeEventArgs e)
+    {
+        _selectedDayName = e.Value?.ToString() ?? _selectedDayName;
+        _dayProgram = WorkoutProgram.GetByName(_selectedDayName);
+        await LoadSession();
+    }
+
+    private async Task LoadSession()
+    {
+        if (_dayProgram is null)
+        {
+            return;
+        }
+
+        _session = await Storage.GetOrCreateSessionAsync(_today, _dayProgram.DayName);
+        _mainPrevious = await Storage.GetMostRecentSetsAsync(_dayProgram.MainLift.Name, _session.Id);
+        _assistPrevious = await Storage.GetMostRecentSetsAsync(_dayProgram.AssistLift.Name, _session.Id);
+    }
+
+    private Models.ExerciseLog GetLog(string exerciseName)
+    {
+        var log = _session!.Exercises.FirstOrDefault(e => e.ExerciseName == exerciseName);
+        if (log is null)
+        {
+            log = new Models.ExerciseLog { ExerciseName = exerciseName };
+            _session.Exercises.Add(log);
+        }
+
+        return log;
+    }
+
+    private async Task SaveSession()
+    {
+        if (_session is not null)
+        {
+            await Storage.SaveSessionAsync(_session);
+        }
+    }
+}
