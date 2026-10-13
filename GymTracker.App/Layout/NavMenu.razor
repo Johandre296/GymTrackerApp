@@ -58,6 +58,6 @@
     private async Task SignOut()
     {
         await Auth.SignOutAsync();
-        Navigation.NavigateTo("/login", forceLoad: true);
+        Navigation.NavigateTo("login", forceLoad: true);
     }
 }
