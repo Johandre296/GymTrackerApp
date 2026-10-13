@@ -1,4 +1,8 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject IAuthService Auth
+@inject IWorkoutStorageService Storage
+@inject NavigationManager Navigation
+
 <div class="page">
     <div class="sidebar">
         <NavMenu />
@@ -6,7 +10,28 @@
 
     <main>
         <article class="content px-4">
-            @Body
+            @if (_ready)
+            {
+                @Body
+            }
         </article>
     </main>
 </div>
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitializeAsync();
+
+        if (!Auth.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login");
+            return;
+        }
+
+        await Storage.SyncWithCloudAsync();
+        _ready = true;
+    }
+}

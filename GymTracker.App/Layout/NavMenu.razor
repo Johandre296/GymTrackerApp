@@ -19,16 +19,45 @@
                 <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> History
             </NavLink>
         </div>
+        @if (Auth.IsAuthenticated)
+        {
+            <div class="nav-item px-3">
+                <small class="text-light d-block mt-2">@Auth.Email</small>
+                <button class="btn btn-link nav-link p-0" @onclick="SignOut">Log out</button>
+            </div>
+        }
     </nav>
 </div>
 
+@implements IDisposable
 @code {
+    [Inject] private IAuthService Auth { get; set; } = null!;
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+
     private bool collapseNavMenu = true;
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 
+    protected override void OnInitialized()
+    {
+        Auth.AuthStateChanged += OnAuthStateChanged;
+    }
+
+    private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Auth.AuthStateChanged -= OnAuthStateChanged;
+    }
+
     private void ToggleNavMenu()
     {
         collapseNavMenu = !collapseNavMenu;
+    }
+
+    private async Task SignOut()
+    {
+        await Auth.SignOutAsync();
+        Navigation.NavigateTo("/login", forceLoad: true);
     }
 }

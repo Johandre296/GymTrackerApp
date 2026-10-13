@@ -7,10 +7,12 @@ public class WorkoutStorageService : IWorkoutStorageService
 {
     private const string StorageKey = "gym-tracker-sessions";
     private readonly ILocalStorageService _localStorage;
+    private readonly ICloudSyncService _cloudSync;
 
-    public WorkoutStorageService(ILocalStorageService localStorage)
+    public WorkoutStorageService(ILocalStorageService localStorage, ICloudSyncService cloudSync)
     {
         _localStorage = localStorage;
+        _cloudSync = cloudSync;
     }
 
     public async Task<List<WorkoutSession>> GetAllSessionsAsync()
@@ -33,6 +35,8 @@ public class WorkoutStorageService : IWorkoutStorageService
 
     public async Task SaveSessionAsync(WorkoutSession session)
     {
+        session.UpdatedAt = DateTime.UtcNow;
+
         var sessions = await GetAllSessionsAsync();
         var index = sessions.FindIndex(s => s.Id == session.Id);
         if (index >= 0)
@@ -45,6 +49,54 @@ public class WorkoutStorageService : IWorkoutStorageService
         }
 
         await _localStorage.SetItemAsync(StorageKey, sessions);
+
+        try
+        {
+            await _cloudSync.PushSessionAsync(session);
+        }
+        catch
+        {
+            // Offline or sync failure - local save already succeeded; SyncWithCloudAsync will catch up later.
+        }
+    }
+
+    public async Task SyncWithCloudAsync()
+    {
+        List<WorkoutSession> remoteSessions;
+        try
+        {
+            remoteSessions = await _cloudSync.PullAllAsync();
+        }
+        catch
+        {
+            return;
+        }
+
+        var localSessions = await GetAllSessionsAsync();
+        var merged = localSessions.ToDictionary(s => s.Id);
+
+        foreach (var remote in remoteSessions)
+        {
+            if (!merged.TryGetValue(remote.Id, out var local) || remote.UpdatedAt > local.UpdatedAt)
+            {
+                merged[remote.Id] = remote;
+            }
+        }
+
+        await _localStorage.SetItemAsync(StorageKey, merged.Values.ToList());
+
+        var remoteIds = remoteSessions.Select(s => s.Id).ToHashSet();
+        foreach (var local in localSessions.Where(s => !remoteIds.Contains(s.Id)))
+        {
+            try
+            {
+                await _cloudSync.PushSessionAsync(local);
+            }
+            catch
+            {
+                // still offline or this one failed - next sync will retry
+            }
+        }
     }
 
     public async Task DeleteSessionAsync(Guid sessionId)

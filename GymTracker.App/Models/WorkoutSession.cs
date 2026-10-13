@@ -6,4 +6,5 @@ public class WorkoutSession
     public DateOnly Date { get; set; }
     public string DayName { get; set; } = string.Empty;
     public List<ExerciseLog> Exercises { get; set; } = new();
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

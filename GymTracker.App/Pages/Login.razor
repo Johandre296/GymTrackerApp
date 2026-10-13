@@ -1,0 +1,72 @@
+@page "/login"
+@layout LoginLayout
+@inject IAuthService Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Gym Tracker - Sign In</PageTitle>
+
+<div class="card login-card">
+    <div class="card-body">
+        <h4 class="card-title mb-3">Gym Tracker</h4>
+
+        <div class="mb-3">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control form-control-lg" @bind="_email" @bind:event="oninput" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control form-control-lg" @bind="_password" @bind:event="oninput"
+                   @onkeydown="OnKeyDown" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger py-2">@_error</div>
+        }
+
+        <button class="btn btn-primary btn-lg w-100" disabled="@_busy" @onclick="SignIn">
+            @(_busy ? "Signing in..." : "Sign In")
+        </button>
+    </div>
+</div>
+
+@code {
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SignIn();
+        }
+    }
+
+    private async Task SignIn()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var error = await Auth.SignInAsync(_email, _password);
+            if (error is null)
+            {
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                _error = error;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not reach the server: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

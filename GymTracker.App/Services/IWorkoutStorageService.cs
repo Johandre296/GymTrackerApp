@@ -9,4 +9,5 @@ public interface IWorkoutStorageService
     Task SaveSessionAsync(WorkoutSession session);
     Task DeleteSessionAsync(Guid sessionId);
     Task<List<SetEntry>> GetMostRecentSetsAsync(string exerciseName, Guid excludeSessionId);
+    Task SyncWithCloudAsync();
 }
