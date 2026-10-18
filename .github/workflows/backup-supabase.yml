@@ -19,11 +19,24 @@ jobs:
           SUPABASE_URL: https://hraauzocvqrkeebdsrxd.supabase.co
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          if [ -z "$SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY secret is empty or not set."
+            exit 1
+          fi
+
           mkdir -p backups
-          curl -sf "$SUPABASE_URL/rest/v1/workout_sessions?select=*" \
+          OUT="backups/workout_sessions_$(date -u +%Y-%m-%d).json"
+          STATUS=$(curl -s -o "$OUT" -w "%{http_code}" "$SUPABASE_URL/rest/v1/workout_sessions?select=*" \
             -H "apikey: $SERVICE_ROLE_KEY" \
-            -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-            -o "backups/workout_sessions_$(date -u +%Y-%m-%d).json"
+            -H "Authorization: Bearer $SERVICE_ROLE_KEY")
+
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Supabase returned HTTP $STATUS. Response body:"
+            cat "$OUT"
+            exit 1
+          fi
+
+          echo "Fetched $(grep -o '"id"' "$OUT" | wc -l) rows."
 
       - name: Commit snapshot
         run: |
