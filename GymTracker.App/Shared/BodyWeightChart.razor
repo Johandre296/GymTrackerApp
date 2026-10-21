@@ -1,79 +1,15 @@
 @using GymTracker.App.Models
 @using System.Globalization
+@using System.Net
+@using System.Text
 
-@{
-    var filtered = FilteredSorted;
-}
-
-@if (filtered.Count == 0)
+@if (FilteredSorted.Count == 0)
 {
     <p class="text-muted">No data to show for the current filters.</p>
 }
 else
 {
-    var minDate = filtered.Min(e => e.Date);
-    var maxDate = filtered.Max(e => e.Date);
-    var minWeight = filtered.Min(e => e.WeightKg);
-    var maxWeight = filtered.Max(e => e.WeightKg);
-    if (minWeight == maxWeight)
-    {
-        minWeight -= 1;
-        maxWeight += 1;
-    }
-    var pad = (maxWeight - minWeight) * 0.1m;
-    minWeight -= pad;
-    maxWeight += pad;
-
-    var clothedPoints = filtered.Where(e => e.IsClothed).ToList();
-    var notClothedPoints = filtered.Where(e => !e.IsClothed).ToList();
-
-    <svg viewBox="0 0 @Width @Height" class="bodyweight-chart" preserveAspectRatio="xMidYMid meet">
-        <line x1="@PadLeft" y1="@PadTop" x2="@PadLeft" y2="@(Height - PadBottom)" stroke="#d0d0d0" />
-        <line x1="@PadLeft" y1="@(Height - PadBottom)" x2="@(Width - PadRight)" y2="@(Height - PadBottom)" stroke="#d0d0d0" />
-
-        <text x="4" y="@(PadTop + 4)" font-size="11" fill="#666">@FormatWeight(maxWeight)</text>
-        <text x="4" y="@(Height - PadBottom)" font-size="11" fill="#666">@FormatWeight(minWeight)</text>
-
-        <text x="@PadLeft" y="@(Height - 8)" font-size="11" fill="#666">@minDate.ToString("d MMM")</text>
-        <text x="@(Width - PadRight)" y="@(Height - 8)" font-size="11" text-anchor="end" fill="#666">@maxDate.ToString("d MMM")</text>
-
-        @if (SplitView)
-        {
-            if (ShowClothed && clothedPoints.Count > 0)
-            {
-                <polyline points="@BuildPolyline(clothedPoints, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@ClothedColor" stroke-width="2" />
-                @foreach (var p in clothedPoints)
-                {
-                    var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
-                    <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@ClothedColor">
-                        <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg (clothed)</title>
-                    </circle>
-                }
-            }
-            if (ShowNotClothed && notClothedPoints.Count > 0)
-            {
-                <polyline points="@BuildPolyline(notClothedPoints, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@NotClothedColor" stroke-width="2" />
-                @foreach (var p in notClothedPoints)
-                {
-                    var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
-                    <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@NotClothedColor">
-                        <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg</title>
-                    </circle>
-                }
-            }
-        }
-        else
-        {
-            <polyline points="@BuildPolyline(filtered, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@CombinedColor" stroke-width="2" />
-            @foreach (var p in filtered)
-            {
-                var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
-                <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@CombinedColor">
-                    <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg@(p.IsClothed ? " (clothed)" : "")</title>
-                </circle>
-            }
-        }
-    </svg>
+    @((MarkupString)BuildSvg())
 
     @if (SplitView)
     {
@@ -97,6 +33,8 @@ else
     private const int PadRight = 12;
     private const int PadTop = 16;
     private const int PadBottom = 26;
+    private const int YTickCount = 5;
+    private const int XTickCount = 4;
 
     private const string CombinedColor = "#1b6ec2";
     private const string ClothedColor = "#dc3545";
@@ -113,17 +51,102 @@ else
             .OrderBy(e => e.Date)
             .ToList();
 
+    private string BuildSvg()
+    {
+        var filtered = FilteredSorted;
+
+        // The date axis always spans every entry, regardless of which categories are currently
+        // shown, so toggling Clothed/Not-clothed never rescales where points land - only the
+        // weight axis adapts to what's actually visible.
+        var minDate = Entries.Min(e => e.Date);
+        var maxDate = Entries.Max(e => e.Date);
+
+        var minWeight = filtered.Min(e => e.WeightKg);
+        var maxWeight = filtered.Max(e => e.WeightKg);
+        if (minWeight == maxWeight)
+        {
+            minWeight -= 1;
+            maxWeight += 1;
+        }
+        var pad = (maxWeight - minWeight) * 0.1m;
+        minWeight -= pad;
+        maxWeight += pad;
+
+        var sb = new StringBuilder();
+        sb.Append(CultureInfo.InvariantCulture, $"<svg viewBox=\"0 0 {Width} {Height}\" class=\"bodyweight-chart\" preserveAspectRatio=\"xMidYMid meet\">");
+
+        foreach (var (frac, label) in BuildWeightTicks(minWeight, maxWeight))
+        {
+            var y = WeightFracToY(frac);
+            sb.Append(CultureInfo.InvariantCulture, $"<line x1=\"{PadLeft}\" y1=\"{FormatCoord(y)}\" x2=\"{Width - PadRight}\" y2=\"{FormatCoord(y)}\" stroke=\"#eee\" />");
+            sb.Append(CultureInfo.InvariantCulture, $"<text x=\"4\" y=\"{FormatCoord(y + 4)}\" font-size=\"11\" fill=\"#666\">{WebUtility.HtmlEncode(label)}</text>");
+        }
+
+        sb.Append(CultureInfo.InvariantCulture, $"<line x1=\"{PadLeft}\" y1=\"{PadTop}\" x2=\"{PadLeft}\" y2=\"{Height - PadBottom}\" stroke=\"#d0d0d0\" />");
+        sb.Append(CultureInfo.InvariantCulture, $"<line x1=\"{PadLeft}\" y1=\"{Height - PadBottom}\" x2=\"{Width - PadRight}\" y2=\"{Height - PadBottom}\" stroke=\"#d0d0d0\" />");
+
+        var xTicks = BuildDateTicks(minDate, maxDate);
+        for (var i = 0; i < xTicks.Count; i++)
+        {
+            var (frac, label) = xTicks[i];
+            var x = DateFracToX(frac);
+            var anchor = i == 0 ? "start" : i == xTicks.Count - 1 ? "end" : "middle";
+            sb.Append(CultureInfo.InvariantCulture, $"<text x=\"{FormatCoord(x)}\" y=\"{Height - 8}\" font-size=\"11\" text-anchor=\"{anchor}\" fill=\"#666\">{WebUtility.HtmlEncode(label)}</text>");
+        }
+
+        void AppendSeries(IEnumerable<BodyWeightEntry> points, string color, bool tagClothed)
+        {
+            var list = points.ToList();
+            if (list.Count == 0)
+            {
+                return;
+            }
+
+            sb.Append(CultureInfo.InvariantCulture, $"<polyline points=\"{BuildPolyline(list, minDate, maxDate, minWeight, maxWeight)}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"2\" />");
+            foreach (var p in list)
+            {
+                var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
+                var title = $"{p.Date:d MMM yyyy}: {FormatWeight(p.WeightKg)} kg{(p.IsClothed && tagClothed ? " (clothed)" : "")}";
+                sb.Append(CultureInfo.InvariantCulture, $"<circle cx=\"{FormatCoord(x)}\" cy=\"{FormatCoord(y)}\" r=\"3\" fill=\"{color}\"><title>{WebUtility.HtmlEncode(title)}</title></circle>");
+            }
+        }
+
+        if (SplitView)
+        {
+            if (ShowClothed)
+            {
+                AppendSeries(filtered.Where(e => e.IsClothed), ClothedColor, tagClothed: false);
+            }
+
+            if (ShowNotClothed)
+            {
+                AppendSeries(filtered.Where(e => !e.IsClothed), NotClothedColor, tagClothed: false);
+            }
+        }
+        else
+        {
+            AppendSeries(filtered, CombinedColor, tagClothed: true);
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
     private static (double X, double Y) PointCoord(BodyWeightEntry p, DateOnly minDate, DateOnly maxDate, decimal minWeight, decimal maxWeight)
     {
         var span = maxDate.DayNumber - minDate.DayNumber;
         var xFrac = span == 0 ? 0.5 : (double)(p.Date.DayNumber - minDate.DayNumber) / span;
-        var x = PadLeft + xFrac * (Width - PadLeft - PadRight);
+        var x = DateFracToX(xFrac);
 
         var yFrac = (double)((p.WeightKg - minWeight) / (maxWeight - minWeight));
-        var y = (Height - PadBottom) - yFrac * (Height - PadTop - PadBottom);
+        var y = WeightFracToY(yFrac);
 
         return (x, y);
     }
+
+    private static double DateFracToX(double frac) => PadLeft + frac * (Width - PadLeft - PadRight);
+
+    private static double WeightFracToY(double frac) => (Height - PadBottom) - frac * (Height - PadTop - PadBottom);
 
     private static string BuildPolyline(IEnumerable<BodyWeightEntry> points, DateOnly minDate, DateOnly maxDate, decimal minWeight, decimal maxWeight) =>
         string.Join(" ", points.Select(p =>
@@ -131,6 +154,33 @@ else
             var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
             return $"{FormatCoord(x)},{FormatCoord(y)}";
         }));
+
+    private static List<(double Frac, string Label)> BuildWeightTicks(decimal min, decimal max)
+    {
+        var ticks = new List<(double, string)>();
+        for (var i = 0; i < YTickCount; i++)
+        {
+            var frac = (double)i / (YTickCount - 1);
+            var value = min + (decimal)frac * (max - min);
+            ticks.Add((frac, FormatWeight(value)));
+        }
+
+        return ticks;
+    }
+
+    private static List<(double Frac, string Label)> BuildDateTicks(DateOnly minDate, DateOnly maxDate)
+    {
+        var ticks = new List<(double, string)>();
+        var span = maxDate.DayNumber - minDate.DayNumber;
+        for (var i = 0; i < XTickCount; i++)
+        {
+            var frac = (double)i / (XTickCount - 1);
+            var date = DateOnly.FromDayNumber(minDate.DayNumber + (int)Math.Round(span * frac));
+            ticks.Add((frac, date.ToString("d MMM yy")));
+        }
+
+        return ticks;
+    }
 
     // SVG attributes always require period-decimal numbers regardless of the browser's locale, so
     // every coordinate and label fed into markup must be formatted with InvariantCulture.
