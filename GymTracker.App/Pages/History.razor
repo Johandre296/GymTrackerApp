@@ -1,64 +1,164 @@
 @page "/history"
 @inject IWorkoutStorageService Storage
 @inject IPersonalBestService PersonalBests
+@inject IBodyWeightService BodyWeights
 @inject IJSRuntime JS
 
 <PageTitle>Gym Tracker - History</PageTitle>
 
 <h3>History</h3>
 
-@if (_sessions is null)
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <button class="nav-link @(_activeTab == Tab.Workouts ? "active" : "")" @onclick="() => _activeTab = Tab.Workouts">Workouts</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link @(_activeTab == Tab.BodyWeight ? "active" : "")" @onclick="() => _activeTab = Tab.BodyWeight">Bodyweight</button>
+    </li>
+</ul>
+
+@if (_activeTab == Tab.Workouts)
 {
-    <p>Loading...</p>
-}
-else if (_sessions.Count == 0)
-{
-    <p class="text-muted">No workouts logged yet.</p>
+    @if (_sessions is null)
+    {
+        <p>Loading...</p>
+    }
+    else if (_sessions.Count == 0)
+    {
+        <p class="text-muted">No workouts logged yet.</p>
+    }
+    else
+    {
+        @foreach (var session in _sessions)
+        {
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><strong>@session.DayName</strong> - @session.Date.ToString("ddd, d MMM yyyy")</span>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSession(session)">Delete</button>
+                </div>
+                <div class="card-body">
+                    @foreach (var exercise in session.Exercises.Where(ex => ex.Sets.Count > 0))
+                    {
+                        <div class="mb-2">
+                            <div class="fw-bold">@exercise.ExerciseName</div>
+                            <div class="small">
+                                @string.Join(", ", exercise.Sets.Select(s => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}"))
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(session.Notes))
+                    {
+                        <div class="small fst-italic mt-2">"@session.Notes"</div>
+                    }
+                </div>
+            </div>
+        }
+    }
 }
 else
 {
-    @foreach (var session in _sessions)
+    @if (_addingWeight)
     {
-        <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><strong>@session.DayName</strong> - @session.Date.ToString("ddd, d MMM yyyy")</span>
-                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSession(session)">Delete</button>
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <input type="date" class="form-control form-control-lg" @bind="_newWeightDate" />
             </div>
-            <div class="card-body">
-                @foreach (var exercise in session.Exercises.Where(ex => ex.Sets.Count > 0))
-                {
-                    <div class="mb-2">
-                        <div class="fw-bold">@exercise.ExerciseName</div>
-                        <div class="small">
-                            @string.Join(", ", exercise.Sets.Select(s => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}"))
-                        </div>
-                    </div>
-                }
-                @if (session.BodyWeightKg is not null)
-                {
-                    <div class="small text-muted">Bodyweight: @session.BodyWeightKg kg</div>
-                }
-                @if (!string.IsNullOrWhiteSpace(session.Notes))
-                {
-                    <div class="small fst-italic mt-2">"@session.Notes"</div>
-                }
+            <div class="col-6">
+                <input type="number" step="0.1" class="form-control form-control-lg" placeholder="kg" @bind="_newWeightValue" />
+            </div>
+            <div class="col-12 d-flex gap-2">
+                <button class="btn btn-primary flex-fill" @onclick="SaveNewWeight">Save</button>
+                <button class="btn btn-outline-secondary flex-fill" @onclick="() => _addingWeight = false">Cancel</button>
             </div>
         </div>
+    }
+    else
+    {
+        <button class="btn btn-outline-primary w-100 mb-3" @onclick="StartAddWeight">+ Add Entry</button>
+    }
+
+    @if (_bodyWeights is null)
+    {
+        <p>Loading...</p>
+    }
+    else if (_bodyWeights.Count == 0)
+    {
+        <p class="text-muted">No bodyweight entries yet.</p>
+    }
+    else
+    {
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Weight (kg)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _bodyWeights)
+                {
+                    <tr>
+                        <td>@entry.Date.ToString("ddd, d MMM yyyy")</td>
+                        <td>
+                            @if (_editingDate == entry.Date)
+                            {
+                                <input type="number" step="0.1" class="form-control form-control-sm" style="width: 100px" @bind="_editWeightValue" />
+                            }
+                            else
+                            {
+                                @entry.WeightKg
+                            }
+                        </td>
+                        <td class="text-end">
+                            @if (_editingDate == entry.Date)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => SaveEdit(entry.Date)">Save</button>
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Cancel</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(entry)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteWeight(entry.Date)">Delete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
     }
 }
 
 @code {
+    private enum Tab { Workouts, BodyWeight }
+
+    private Tab _activeTab = Tab.Workouts;
     private List<Models.WorkoutSession>? _sessions;
+    private List<Models.BodyWeightEntry>? _bodyWeights;
+
+    private bool _addingWeight;
+    private DateOnly _newWeightDate;
+    private decimal _newWeightValue;
+
+    private DateOnly? _editingDate;
+    private decimal _editWeightValue;
 
     protected override async Task OnInitializedAsync()
     {
-        await Load();
+        await LoadSessions();
+        await LoadBodyWeights();
     }
 
-    private async Task Load()
+    private async Task LoadSessions()
     {
         var all = await Storage.GetAllSessionsAsync();
         _sessions = all.OrderByDescending(s => s.Date).ToList();
+    }
+
+    private async Task LoadBodyWeights()
+    {
+        var all = await BodyWeights.GetAllAsync();
+        _bodyWeights = all.OrderByDescending(e => e.Date).ToList();
     }
 
     private async Task DeleteSession(Models.WorkoutSession session)
@@ -79,6 +179,54 @@ else
             await PersonalBests.RecomputeAsync(exerciseName, remaining);
         }
 
-        await Load();
+        await LoadSessions();
+    }
+
+    private void StartAddWeight()
+    {
+        _newWeightDate = DateOnly.FromDateTime(DateTime.Now);
+        _newWeightValue = 0;
+        _addingWeight = true;
+    }
+
+    private async Task SaveNewWeight()
+    {
+        if (_newWeightValue > 0)
+        {
+            await BodyWeights.SetAsync(_newWeightDate, _newWeightValue);
+            await LoadBodyWeights();
+        }
+
+        _addingWeight = false;
+    }
+
+    private void StartEdit(Models.BodyWeightEntry entry)
+    {
+        _editingDate = entry.Date;
+        _editWeightValue = entry.WeightKg;
+    }
+
+    private void CancelEdit()
+    {
+        _editingDate = null;
+    }
+
+    private async Task SaveEdit(DateOnly date)
+    {
+        await BodyWeights.SetAsync(date, _editWeightValue);
+        _editingDate = null;
+        await LoadBodyWeights();
+    }
+
+    private async Task DeleteWeight(DateOnly date)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete the bodyweight entry for {date:ddd, d MMM yyyy}?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await BodyWeights.DeleteAsync(date);
+        await LoadBodyWeights();
     }
 }

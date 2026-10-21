@@ -29,7 +29,6 @@ public class CloudSyncService : ICloudSyncService
             day_name = session.DayName,
             data = session.Exercises,
             updated_at = session.UpdatedAt,
-            body_weight_kg = session.BodyWeightKg,
             notes = session.Notes,
         };
 
@@ -66,7 +65,6 @@ public class CloudSyncService : ICloudSyncService
             DayName = r.DayName,
             Exercises = r.Data,
             UpdatedAt = r.UpdatedAt,
-            BodyWeightKg = r.BodyWeightKg,
             Notes = r.Notes ?? string.Empty,
         }).ToList();
     }
@@ -146,6 +144,72 @@ public class CloudSyncService : ICloudSyncService
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task PushBodyWeightAsync(BodyWeightEntry entry)
+    {
+        var token = await _auth.GetValidAccessTokenAsync()
+            ?? throw new InvalidOperationException("Not signed in.");
+
+        var payload = new
+        {
+            user_id = _auth.UserId,
+            date = entry.Date.ToString("yyyy-MM-dd"),
+            weight_kg = entry.WeightKg,
+            updated_at = entry.UpdatedAt,
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "body_weight_entries")
+        {
+            Content = JsonContent.Create(payload),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("Prefer", "resolution=merge-duplicates,return=minimal");
+
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<List<BodyWeightEntry>> PullAllBodyWeightsAsync()
+    {
+        var token = await _auth.GetValidAccessTokenAsync();
+        if (token is null)
+        {
+            return new List<BodyWeightEntry>();
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"body_weight_entries?user_id=eq.{_auth.UserId}&select=*");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        var rows = await response.Content.ReadFromJsonAsync<List<SupabaseBodyWeightRow>>() ?? new();
+        return rows.Select(r => new BodyWeightEntry
+        {
+            Date = DateOnly.Parse(r.Date),
+            WeightKg = r.WeightKg,
+            UpdatedAt = r.UpdatedAt,
+        }).ToList();
+    }
+
+    public async Task DeleteBodyWeightAsync(DateOnly date)
+    {
+        var token = await _auth.GetValidAccessTokenAsync()
+            ?? throw new InvalidOperationException("Not signed in.");
+
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"body_weight_entries?date=eq.{date:yyyy-MM-dd}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private class SupabaseBodyWeightRow
+    {
+        [JsonPropertyName("date")] public string Date { get; set; } = "";
+        [JsonPropertyName("weight_kg")] public decimal WeightKg { get; set; }
+        [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+    }
+
     private class SupabaseSessionRow
     {
         [JsonPropertyName("id")] public Guid Id { get; set; }
@@ -153,7 +217,6 @@ public class CloudSyncService : ICloudSyncService
         [JsonPropertyName("day_name")] public string DayName { get; set; } = "";
         [JsonPropertyName("data")] public List<ExerciseLog> Data { get; set; } = new();
         [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
-        [JsonPropertyName("body_weight_kg")] public decimal? BodyWeightKg { get; set; }
         [JsonPropertyName("notes")] public string? Notes { get; set; }
     }
 

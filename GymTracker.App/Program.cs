@@ -41,5 +41,6 @@ builder.Services.AddScoped<ICloudSyncService>(sp => new CloudSyncService(
 
 builder.Services.AddScoped<IWorkoutStorageService, WorkoutStorageService>();
 builder.Services.AddScoped<IPersonalBestService, PersonalBestService>();
+builder.Services.AddScoped<IBodyWeightService, BodyWeightService>();
 
 await builder.Build().RunAsync();

@@ -2,6 +2,7 @@
 @using GymTracker.App.Data
 @inject IWorkoutStorageService Storage
 @inject IPersonalBestService PersonalBests
+@inject IBodyWeightService BodyWeights
 
 <PageTitle>Gym Tracker - Workout</PageTitle>
 
@@ -43,7 +44,9 @@
                           Log="log"
                           PreviousSets="GetPreviousSets(log.ExerciseName)"
                           OnSetAdded="(set) => HandleSetAdded(log, set)"
-                          OnSetRemoved="() => HandleSetRemoved(log)" />
+                          OnSetRemoved="() => HandleSetRemoved(log)"
+                          CanRemove="IsAdHocExercise(log.ExerciseName)"
+                          OnExerciseRemoved="() => RemoveExercise(log)" />
     }
 
     @if (_session.Exercises.Count == 0)
@@ -68,8 +71,14 @@
     <div class="card mb-3">
         <div class="card-body">
             <label class="form-label small mb-0">Bodyweight (kg)</label>
-            <input type="number" step="0.1" class="form-control form-control-lg mb-3"
-                   value="@_session.BodyWeightKg" @onchange="OnBodyWeightChanged" />
+            <div class="input-group mb-3">
+                <input type="number" step="0.1" class="form-control form-control-lg"
+                       value="@_bodyWeightKg" @onchange="OnBodyWeightChanged" />
+                @if (_bodyWeightKg is not null)
+                {
+                    <button class="btn btn-outline-danger" @onclick="ClearBodyWeight">Clear</button>
+                }
+            </div>
 
             <label class="form-label small mb-0">Notes</label>
             <textarea class="form-control" rows="3" placeholder="How did it feel? Anything to remember for next time?"
@@ -98,11 +107,16 @@ else
 
     private (string Name, decimal Weight)? _celebration;
 
+    private decimal? _bodyWeightKg;
+
     protected override async Task OnInitializedAsync()
     {
         _today = DateOnly.FromDateTime(DateTime.Now);
         _dayProgram = WorkoutProgram.GetForToday();
         _selectedDayName = _dayProgram.DayName;
+
+        var todayWeight = await BodyWeights.GetForDateAsync(_today);
+        _bodyWeightKg = todayWeight?.WeightKg;
 
         var allSessions = await Storage.GetAllSessionsAsync();
         var hardcodedNames = WorkoutProgram.Days.Select(d => d.DayName).ToHashSet();
@@ -255,8 +269,34 @@ else
 
     private async Task OnBodyWeightChanged(ChangeEventArgs e)
     {
-        _session!.BodyWeightKg = decimal.TryParse(e.Value?.ToString(), out var value) ? value : null;
+        if (decimal.TryParse(e.Value?.ToString(), out var value))
+        {
+            _bodyWeightKg = value;
+            await BodyWeights.SetAsync(_today, value);
+        }
+        else
+        {
+            await ClearBodyWeight();
+        }
+    }
+
+    private async Task ClearBodyWeight()
+    {
+        _bodyWeightKg = null;
+        await BodyWeights.DeleteAsync(_today);
+    }
+
+    private bool IsAdHocExercise(string name) =>
+        _dayProgram is null || (_dayProgram.MainLift.Name != name && _dayProgram.AssistLift.Name != name);
+
+    private async Task RemoveExercise(Models.ExerciseLog log)
+    {
+        _session!.Exercises.Remove(log);
+        _previousSets.Remove(log.ExerciseName);
         await SaveSession();
+
+        var allSessions = await Storage.GetAllSessionsAsync();
+        await PersonalBests.RecomputeAsync(log.ExerciseName, allSessions);
     }
 
     private async Task OnNotesChanged(ChangeEventArgs e)

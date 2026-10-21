@@ -27,7 +27,7 @@ jobs:
           mkdir -p backups
           DATE="$(date -u +%Y-%m-%d)"
 
-          for TABLE in workout_sessions personal_bests; do
+          for TABLE in workout_sessions personal_bests body_weight_entries; do
             OUT="backups/${TABLE}_${DATE}.json"
             STATUS=$(curl -s -o "$OUT" -w "%{http_code}" "$SUPABASE_URL/rest/v1/${TABLE}?select=*" \
               -H "apikey: $SERVICE_ROLE_KEY" \

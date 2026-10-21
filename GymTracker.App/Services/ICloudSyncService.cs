@@ -11,4 +11,8 @@ public interface ICloudSyncService
     Task PushPersonalBestAsync(PersonalBest personalBest);
     Task<List<PersonalBest>> PullAllPersonalBestsAsync();
     Task DeletePersonalBestAsync(string exerciseName);
+
+    Task PushBodyWeightAsync(BodyWeightEntry entry);
+    Task<List<BodyWeightEntry>> PullAllBodyWeightsAsync();
+    Task DeleteBodyWeightAsync(DateOnly date);
 }

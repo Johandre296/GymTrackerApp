@@ -1,12 +1,19 @@
 @using GymTracker.App.Models
+@inject IJSRuntime JS
 
 <div class="card exercise-card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span class="fw-bold">@Exercise.Name</span>
-        @if (PreviousSets.Count > 0)
-        {
-            <small class="text-muted">Last time: @string.Join(", ", PreviousSets.Select(FormatSet))</small>
-        }
+        <div class="d-flex align-items-center gap-2">
+            @if (PreviousSets.Count > 0)
+            {
+                <small class="text-muted">Last time: @string.Join(", ", PreviousSets.Select(FormatSet))</small>
+            }
+            @if (CanRemove)
+            {
+                <button class="btn btn-sm btn-link text-danger p-0" @onclick="RemoveExercise">Remove</button>
+            }
+        </div>
     </div>
     <div class="card-body">
         @if (Log.Sets.Count > 0)
@@ -69,6 +76,8 @@
     [Parameter] public List<SetEntry> PreviousSets { get; set; } = new();
     [Parameter] public EventCallback<SetEntry> OnSetAdded { get; set; }
     [Parameter] public EventCallback OnSetRemoved { get; set; }
+    [Parameter] public bool CanRemove { get; set; }
+    [Parameter] public EventCallback OnExerciseRemoved { get; set; }
 
     private decimal _weight;
     private int _reps;
@@ -94,4 +103,18 @@
     }
 
     private static string FormatSet(SetEntry s) => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}";
+
+    private async Task RemoveExercise()
+    {
+        if (Log.Sets.Count > 0)
+        {
+            var confirmed = await JS.InvokeAsync<bool>("confirm", $"Remove {Exercise.Name}? This deletes its {Log.Sets.Count} logged set(s) too.");
+            if (!confirmed)
+            {
+                return;
+            }
+        }
+
+        await OnExerciseRemoved.InvokeAsync();
+    }
 }

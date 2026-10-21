@@ -2,6 +2,7 @@
 @inject IAuthService Auth
 @inject IWorkoutStorageService Storage
 @inject IPersonalBestService PersonalBests
+@inject IBodyWeightService BodyWeights
 @inject NavigationManager Navigation
 
 <div class="page">
@@ -34,6 +35,7 @@
 
         await Storage.SyncWithCloudAsync();
         await PersonalBests.SyncWithCloudAsync();
+        await BodyWeights.SyncWithCloudAsync();
         _ready = true;
     }
 }
