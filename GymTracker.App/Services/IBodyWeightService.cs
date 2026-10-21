@@ -8,7 +8,7 @@ public interface IBodyWeightService
     Task<BodyWeightEntry?> GetForDateAsync(DateOnly date);
 
     /// <summary>Creates or overwrites the entry for this date.</summary>
-    Task SetAsync(DateOnly date, decimal weightKg);
+    Task SetAsync(DateOnly date, decimal weightKg, bool isClothed);
 
     Task DeleteAsync(DateOnly date);
 

@@ -1,0 +1,140 @@
+@using GymTracker.App.Models
+@using System.Globalization
+
+@{
+    var filtered = FilteredSorted;
+}
+
+@if (filtered.Count == 0)
+{
+    <p class="text-muted">No data to show for the current filters.</p>
+}
+else
+{
+    var minDate = filtered.Min(e => e.Date);
+    var maxDate = filtered.Max(e => e.Date);
+    var minWeight = filtered.Min(e => e.WeightKg);
+    var maxWeight = filtered.Max(e => e.WeightKg);
+    if (minWeight == maxWeight)
+    {
+        minWeight -= 1;
+        maxWeight += 1;
+    }
+    var pad = (maxWeight - minWeight) * 0.1m;
+    minWeight -= pad;
+    maxWeight += pad;
+
+    var clothedPoints = filtered.Where(e => e.IsClothed).ToList();
+    var notClothedPoints = filtered.Where(e => !e.IsClothed).ToList();
+
+    <svg viewBox="0 0 @Width @Height" class="bodyweight-chart" preserveAspectRatio="xMidYMid meet">
+        <line x1="@PadLeft" y1="@PadTop" x2="@PadLeft" y2="@(Height - PadBottom)" stroke="#d0d0d0" />
+        <line x1="@PadLeft" y1="@(Height - PadBottom)" x2="@(Width - PadRight)" y2="@(Height - PadBottom)" stroke="#d0d0d0" />
+
+        <text x="4" y="@(PadTop + 4)" font-size="11" fill="#666">@FormatWeight(maxWeight)</text>
+        <text x="4" y="@(Height - PadBottom)" font-size="11" fill="#666">@FormatWeight(minWeight)</text>
+
+        <text x="@PadLeft" y="@(Height - 8)" font-size="11" fill="#666">@minDate.ToString("d MMM")</text>
+        <text x="@(Width - PadRight)" y="@(Height - 8)" font-size="11" text-anchor="end" fill="#666">@maxDate.ToString("d MMM")</text>
+
+        @if (SplitView)
+        {
+            if (ShowClothed && clothedPoints.Count > 0)
+            {
+                <polyline points="@BuildPolyline(clothedPoints, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@ClothedColor" stroke-width="2" />
+                @foreach (var p in clothedPoints)
+                {
+                    var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
+                    <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@ClothedColor">
+                        <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg (clothed)</title>
+                    </circle>
+                }
+            }
+            if (ShowNotClothed && notClothedPoints.Count > 0)
+            {
+                <polyline points="@BuildPolyline(notClothedPoints, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@NotClothedColor" stroke-width="2" />
+                @foreach (var p in notClothedPoints)
+                {
+                    var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
+                    <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@NotClothedColor">
+                        <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg</title>
+                    </circle>
+                }
+            }
+        }
+        else
+        {
+            <polyline points="@BuildPolyline(filtered, minDate, maxDate, minWeight, maxWeight)" fill="none" stroke="@CombinedColor" stroke-width="2" />
+            @foreach (var p in filtered)
+            {
+                var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
+                <circle cx="@FormatCoord(x)" cy="@FormatCoord(y)" r="3" fill="@CombinedColor">
+                    <title>@p.Date.ToString("d MMM yyyy"): @FormatWeight(p.WeightKg) kg@(p.IsClothed ? " (clothed)" : "")</title>
+                </circle>
+            }
+        }
+    </svg>
+
+    @if (SplitView)
+    {
+        <div class="d-flex gap-3 small mt-1">
+            @if (ShowClothed)
+            {
+                <span><span class="legend-dot" style="background:@ClothedColor"></span>Clothed</span>
+            }
+            @if (ShowNotClothed)
+            {
+                <span><span class="legend-dot" style="background:@NotClothedColor"></span>Not clothed</span>
+            }
+        </div>
+    }
+}
+
+@code {
+    private const int Width = 600;
+    private const int Height = 260;
+    private const int PadLeft = 44;
+    private const int PadRight = 12;
+    private const int PadTop = 16;
+    private const int PadBottom = 26;
+
+    private const string CombinedColor = "#1b6ec2";
+    private const string ClothedColor = "#dc3545";
+    private const string NotClothedColor = "#198754";
+
+    [Parameter] public List<BodyWeightEntry> Entries { get; set; } = new();
+    [Parameter] public bool ShowClothed { get; set; } = true;
+    [Parameter] public bool ShowNotClothed { get; set; } = true;
+    [Parameter] public bool SplitView { get; set; }
+
+    private List<BodyWeightEntry> FilteredSorted =>
+        Entries
+            .Where(e => (e.IsClothed && ShowClothed) || (!e.IsClothed && ShowNotClothed))
+            .OrderBy(e => e.Date)
+            .ToList();
+
+    private static (double X, double Y) PointCoord(BodyWeightEntry p, DateOnly minDate, DateOnly maxDate, decimal minWeight, decimal maxWeight)
+    {
+        var span = maxDate.DayNumber - minDate.DayNumber;
+        var xFrac = span == 0 ? 0.5 : (double)(p.Date.DayNumber - minDate.DayNumber) / span;
+        var x = PadLeft + xFrac * (Width - PadLeft - PadRight);
+
+        var yFrac = (double)((p.WeightKg - minWeight) / (maxWeight - minWeight));
+        var y = (Height - PadBottom) - yFrac * (Height - PadTop - PadBottom);
+
+        return (x, y);
+    }
+
+    private static string BuildPolyline(IEnumerable<BodyWeightEntry> points, DateOnly minDate, DateOnly maxDate, decimal minWeight, decimal maxWeight) =>
+        string.Join(" ", points.Select(p =>
+        {
+            var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
+            return $"{FormatCoord(x)},{FormatCoord(y)}";
+        }));
+
+    // SVG attributes always require period-decimal numbers regardless of the browser's locale, so
+    // every coordinate and label fed into markup must be formatted with InvariantCulture.
+    private static string FormatCoord(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static string FormatWeight(decimal value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+}

@@ -30,6 +30,10 @@ public class CloudSyncService : ICloudSyncService
             data = session.Exercises,
             updated_at = session.UpdatedAt,
             notes = session.Notes,
+            // Explicit null so an upsert always un-tombstones the row - PostgREST's merge-duplicates
+            // only touches columns present in the payload, so omitting this would leave a prior
+            // soft-delete in place if the same id/date is ever legitimately re-pushed.
+            deleted_at = (DateTime?)null,
         };
 
         var request = new HttpRequestMessage(HttpMethod.Post, "workout_sessions")
@@ -43,12 +47,12 @@ public class CloudSyncService : ICloudSyncService
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<List<WorkoutSession>> PullAllAsync()
+    public async Task<SyncResult<WorkoutSession, Guid>> PullAllAsync()
     {
         var token = await _auth.GetValidAccessTokenAsync();
         if (token is null)
         {
-            return new List<WorkoutSession>();
+            return new SyncResult<WorkoutSession, Guid>();
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"workout_sessions?user_id=eq.{_auth.UserId}&select=*");
@@ -58,15 +62,22 @@ public class CloudSyncService : ICloudSyncService
         response.EnsureSuccessStatusCode();
 
         var rows = await response.Content.ReadFromJsonAsync<List<SupabaseSessionRow>>() ?? new();
-        return rows.Select(r => new WorkoutSession
+        return new SyncResult<WorkoutSession, Guid>
         {
-            Id = r.Id,
-            Date = DateOnly.Parse(r.Date),
-            DayName = r.DayName,
-            Exercises = r.Data,
-            UpdatedAt = r.UpdatedAt,
-            Notes = r.Notes ?? string.Empty,
-        }).ToList();
+            AllKnownKeys = rows.Select(r => r.Id).ToHashSet(),
+            Active = rows
+                .Where(r => r.DeletedAt is null)
+                .Select(r => new WorkoutSession
+                {
+                    Id = r.Id,
+                    Date = DateOnly.Parse(r.Date),
+                    DayName = r.DayName,
+                    Exercises = r.Data,
+                    UpdatedAt = r.UpdatedAt,
+                    Notes = r.Notes ?? string.Empty,
+                })
+                .ToList(),
+        };
     }
 
     public async Task DeleteSessionAsync(Guid sessionId)
@@ -74,8 +85,15 @@ public class CloudSyncService : ICloudSyncService
         var token = await _auth.GetValidAccessTokenAsync()
             ?? throw new InvalidOperationException("Not signed in.");
 
-        var request = new HttpRequestMessage(HttpMethod.Delete, $"workout_sessions?id=eq.{sessionId}");
+        // Soft delete: a hard DELETE would let a device with a stale local copy "resurrect" this
+        // session by pushing it back up during its next sync, since a missing row looks identical to
+        // one that was simply never synced. Marking it deleted_at lets sync tell the two apart.
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"workout_sessions?id=eq.{sessionId}")
+        {
+            Content = JsonContent.Create(new { deleted_at = DateTime.UtcNow }),
+        };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("Prefer", "return=minimal");
 
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
@@ -154,7 +172,9 @@ public class CloudSyncService : ICloudSyncService
             user_id = _auth.UserId,
             date = entry.Date.ToString("yyyy-MM-dd"),
             weight_kg = entry.WeightKg,
+            is_clothed = entry.IsClothed,
             updated_at = entry.UpdatedAt,
+            deleted_at = (DateTime?)null,
         };
 
         var request = new HttpRequestMessage(HttpMethod.Post, "body_weight_entries")
@@ -168,12 +188,12 @@ public class CloudSyncService : ICloudSyncService
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<List<BodyWeightEntry>> PullAllBodyWeightsAsync()
+    public async Task<SyncResult<BodyWeightEntry, DateOnly>> PullAllBodyWeightsAsync()
     {
         var token = await _auth.GetValidAccessTokenAsync();
         if (token is null)
         {
-            return new List<BodyWeightEntry>();
+            return new SyncResult<BodyWeightEntry, DateOnly>();
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"body_weight_entries?user_id=eq.{_auth.UserId}&select=*");
@@ -183,12 +203,20 @@ public class CloudSyncService : ICloudSyncService
         response.EnsureSuccessStatusCode();
 
         var rows = await response.Content.ReadFromJsonAsync<List<SupabaseBodyWeightRow>>() ?? new();
-        return rows.Select(r => new BodyWeightEntry
+        return new SyncResult<BodyWeightEntry, DateOnly>
         {
-            Date = DateOnly.Parse(r.Date),
-            WeightKg = r.WeightKg,
-            UpdatedAt = r.UpdatedAt,
-        }).ToList();
+            AllKnownKeys = rows.Select(r => DateOnly.Parse(r.Date)).ToHashSet(),
+            Active = rows
+                .Where(r => r.DeletedAt is null)
+                .Select(r => new BodyWeightEntry
+                {
+                    Date = DateOnly.Parse(r.Date),
+                    WeightKg = r.WeightKg,
+                    IsClothed = r.IsClothed,
+                    UpdatedAt = r.UpdatedAt,
+                })
+                .ToList(),
+        };
     }
 
     public async Task DeleteBodyWeightAsync(DateOnly date)
@@ -196,8 +224,13 @@ public class CloudSyncService : ICloudSyncService
         var token = await _auth.GetValidAccessTokenAsync()
             ?? throw new InvalidOperationException("Not signed in.");
 
-        var request = new HttpRequestMessage(HttpMethod.Delete, $"body_weight_entries?date=eq.{date:yyyy-MM-dd}");
+        // Soft delete - see the comment in DeleteSessionAsync for why a hard DELETE is unsafe here.
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"body_weight_entries?date=eq.{date:yyyy-MM-dd}")
+        {
+            Content = JsonContent.Create(new { deleted_at = DateTime.UtcNow }),
+        };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add("Prefer", "return=minimal");
 
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
@@ -207,7 +240,9 @@ public class CloudSyncService : ICloudSyncService
     {
         [JsonPropertyName("date")] public string Date { get; set; } = "";
         [JsonPropertyName("weight_kg")] public decimal WeightKg { get; set; }
+        [JsonPropertyName("is_clothed")] public bool IsClothed { get; set; }
         [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+        [JsonPropertyName("deleted_at")] public DateTime? DeletedAt { get; set; }
     }
 
     private class SupabaseSessionRow
@@ -218,6 +253,7 @@ public class CloudSyncService : ICloudSyncService
         [JsonPropertyName("data")] public List<ExerciseLog> Data { get; set; } = new();
         [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
         [JsonPropertyName("notes")] public string? Notes { get; set; }
+        [JsonPropertyName("deleted_at")] public DateTime? DeletedAt { get; set; }
     }
 
     private class SupabasePersonalBestRow

@@ -5,7 +5,7 @@ namespace GymTracker.App.Services;
 public interface ICloudSyncService
 {
     Task PushSessionAsync(WorkoutSession session);
-    Task<List<WorkoutSession>> PullAllAsync();
+    Task<SyncResult<WorkoutSession, Guid>> PullAllAsync();
     Task DeleteSessionAsync(Guid sessionId);
 
     Task PushPersonalBestAsync(PersonalBest personalBest);
@@ -13,6 +13,6 @@ public interface ICloudSyncService
     Task DeletePersonalBestAsync(string exerciseName);
 
     Task PushBodyWeightAsync(BodyWeightEntry entry);
-    Task<List<BodyWeightEntry>> PullAllBodyWeightsAsync();
+    Task<SyncResult<BodyWeightEntry, DateOnly>> PullAllBodyWeightsAsync();
     Task DeleteBodyWeightAsync(DateOnly date);
 }

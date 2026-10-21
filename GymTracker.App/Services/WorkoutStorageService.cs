@@ -62,10 +62,10 @@ public class WorkoutStorageService : IWorkoutStorageService
 
     public async Task SyncWithCloudAsync()
     {
-        List<WorkoutSession> remoteSessions;
+        Models.SyncResult<WorkoutSession, Guid> result;
         try
         {
-            remoteSessions = await _cloudSync.PullAllAsync();
+            result = await _cloudSync.PullAllAsync();
         }
         catch
         {
@@ -73,9 +73,13 @@ public class WorkoutStorageService : IWorkoutStorageService
         }
 
         var localSessions = await GetAllSessionsAsync();
-        var merged = localSessions.ToDictionary(s => s.Id);
 
-        foreach (var remote in remoteSessions)
+        // The server knows about this id (active or soft-deleted) but no longer has it active -
+        // it was deleted elsewhere, so drop the stale local copy instead of keeping or re-pushing it.
+        localSessions.RemoveAll(s => result.AllKnownKeys.Contains(s.Id) && result.Active.All(r => r.Id != s.Id));
+
+        var merged = localSessions.ToDictionary(s => s.Id);
+        foreach (var remote in result.Active)
         {
             if (!merged.TryGetValue(remote.Id, out var local) || remote.UpdatedAt > local.UpdatedAt)
             {
@@ -85,8 +89,10 @@ public class WorkoutStorageService : IWorkoutStorageService
 
         await _localStorage.SetItemAsync(StorageKey, merged.Values.ToList());
 
-        var remoteIds = remoteSessions.Select(s => s.Id).ToHashSet();
-        foreach (var local in localSessions.Where(s => !remoteIds.Contains(s.Id)))
+        // Only push sessions the server has never seen at all - anything it already knows about
+        // (even soft-deleted) must not be blindly re-pushed, or a deletion could be undone by a
+        // device that was offline when it happened.
+        foreach (var local in localSessions.Where(s => !result.AllKnownKeys.Contains(s.Id)))
         {
             try
             {

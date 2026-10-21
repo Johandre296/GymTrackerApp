@@ -27,7 +27,7 @@ public class BodyWeightService : IBodyWeightService
         return all.FirstOrDefault(e => e.Date == date);
     }
 
-    public async Task SetAsync(DateOnly date, decimal weightKg)
+    public async Task SetAsync(DateOnly date, decimal weightKg, bool isClothed)
     {
         var all = await GetAllAsync();
         var entry = all.FirstOrDefault(e => e.Date == date);
@@ -38,6 +38,7 @@ public class BodyWeightService : IBodyWeightService
         }
 
         entry.WeightKg = weightKg;
+        entry.IsClothed = isClothed;
         entry.UpdatedAt = DateTime.UtcNow;
 
         await _localStorage.SetItemAsync(StorageKey, all);
@@ -70,10 +71,10 @@ public class BodyWeightService : IBodyWeightService
 
     public async Task SyncWithCloudAsync()
     {
-        List<BodyWeightEntry> remote;
+        Models.SyncResult<BodyWeightEntry, DateOnly> result;
         try
         {
-            remote = await _cloudSync.PullAllBodyWeightsAsync();
+            result = await _cloudSync.PullAllBodyWeightsAsync();
         }
         catch
         {
@@ -81,9 +82,12 @@ public class BodyWeightService : IBodyWeightService
         }
 
         var local = await GetAllAsync();
-        var merged = local.ToDictionary(e => e.Date);
 
-        foreach (var r in remote)
+        // Known to the server but no longer active - deleted elsewhere, drop the stale local copy.
+        local.RemoveAll(e => result.AllKnownKeys.Contains(e.Date) && result.Active.All(r => r.Date != e.Date));
+
+        var merged = local.ToDictionary(e => e.Date);
+        foreach (var r in result.Active)
         {
             if (!merged.TryGetValue(r.Date, out var existing) || r.UpdatedAt > existing.UpdatedAt)
             {
@@ -93,8 +97,8 @@ public class BodyWeightService : IBodyWeightService
 
         await _localStorage.SetItemAsync(StorageKey, merged.Values.ToList());
 
-        var remoteDates = remote.Select(r => r.Date).ToHashSet();
-        foreach (var localOnly in local.Where(e => !remoteDates.Contains(e.Date)))
+        // Only push entries the server has never seen at all - see WorkoutStorageService.SyncWithCloudAsync.
+        foreach (var localOnly in local.Where(e => !result.AllKnownKeys.Contains(e.Date)))
         {
             try
             {

@@ -106,13 +106,14 @@
 
     private async Task RemoveExercise()
     {
-        if (Log.Sets.Count > 0)
+        var message = Log.Sets.Count > 0
+            ? $"Remove {Exercise.Name}? This deletes its {Log.Sets.Count} logged set(s) too."
+            : $"Remove {Exercise.Name}?";
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", message);
+        if (!confirmed)
         {
-            var confirmed = await JS.InvokeAsync<bool>("confirm", $"Remove {Exercise.Name}? This deletes its {Log.Sets.Count} logged set(s) too.");
-            if (!confirmed)
-            {
-                return;
-            }
+            return;
         }
 
         await OnExerciseRemoved.InvokeAsync();
