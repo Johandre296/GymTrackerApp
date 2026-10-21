@@ -67,7 +67,8 @@
     [Parameter, EditorRequired] public ExerciseDefinition Exercise { get; set; } = null!;
     [Parameter, EditorRequired] public ExerciseLog Log { get; set; } = null!;
     [Parameter] public List<SetEntry> PreviousSets { get; set; } = new();
-    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback<SetEntry> OnSetAdded { get; set; }
+    [Parameter] public EventCallback OnSetRemoved { get; set; }
 
     private decimal _weight;
     private int _reps;
@@ -75,20 +76,21 @@
 
     private async Task AddSet()
     {
-        Log.Sets.Add(new SetEntry
+        var set = new SetEntry
         {
             Weight = _weight,
             Reps = _reps,
             IsWarmup = _isWarmup,
-        });
+        };
+        Log.Sets.Add(set);
         _isWarmup = false;
-        await OnChanged.InvokeAsync();
+        await OnSetAdded.InvokeAsync(set);
     }
 
     private async Task RemoveSet(SetEntry set)
     {
         Log.Sets.Remove(set);
-        await OnChanged.InvokeAsync();
+        await OnSetRemoved.InvokeAsync();
     }
 
     private static string FormatSet(SetEntry s) => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}";

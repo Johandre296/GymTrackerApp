@@ -1,8 +1,13 @@
 @page "/"
 @using GymTracker.App.Data
 @inject IWorkoutStorageService Storage
+@inject IPersonalBestService PersonalBests
 
 <PageTitle>Gym Tracker - Workout</PageTitle>
+
+<PbCelebration Visible="_celebration is not null"
+               ExerciseName="@(_celebration?.Name ?? string.Empty)"
+               Weight="@(_celebration?.Weight ?? 0)" />
 
 <div class="mb-3">
     <label class="form-label small mb-0">Workout day</label>
@@ -11,21 +16,66 @@
         {
             <option value="@day.DayName">@day.DayName - @day.FocusLabel</option>
         }
+        @foreach (var custom in _customDayNames)
+        {
+            <option value="@custom">@custom</option>
+        }
+        <option value="__new__">+ Add new day...</option>
     </select>
     <small class="text-muted">@_today.ToString("dddd, d MMMM yyyy")</small>
 </div>
 
-@if (_session is not null && _dayProgram is not null)
+@if (_creatingNewDay)
 {
-    <ExerciseLogCard Exercise="_dayProgram.MainLift"
-                      Log="GetLog(_dayProgram.MainLift.Name)"
-                      PreviousSets="_mainPrevious"
-                      OnChanged="SaveSession" />
+    <div class="input-group mb-3">
+        <input class="form-control form-control-lg" placeholder="New day name (e.g. Saturday Arms)"
+               @bind="_newDayName" @bind:event="oninput" />
+        <button class="btn btn-primary" @onclick="CreateNewDay">Create</button>
+        <button class="btn btn-outline-secondary" @onclick="CancelNewDay">Cancel</button>
+    </div>
+}
 
-    <ExerciseLogCard Exercise="_dayProgram.AssistLift"
-                      Log="GetLog(_dayProgram.AssistLift.Name)"
-                      PreviousSets="_assistPrevious"
-                      OnChanged="SaveSession" />
+@if (_session is not null)
+{
+    @foreach (var log in _session.Exercises)
+    {
+        <ExerciseLogCard Exercise="GetExerciseDefinition(log.ExerciseName)"
+                          Log="log"
+                          PreviousSets="GetPreviousSets(log.ExerciseName)"
+                          OnSetAdded="(set) => HandleSetAdded(log, set)"
+                          OnSetRemoved="() => HandleSetRemoved(log)" />
+    }
+
+    @if (_session.Exercises.Count == 0)
+    {
+        <p class="text-muted">No exercises yet - add one below.</p>
+    }
+
+    @if (_addingExercise)
+    {
+        <div class="input-group mb-3">
+            <input class="form-control form-control-lg" placeholder="Exercise name"
+                   @bind="_newExerciseName" @bind:event="oninput" />
+            <button class="btn btn-primary" @onclick="AddExercise">Add</button>
+            <button class="btn btn-outline-secondary" @onclick="() => _addingExercise = false">Cancel</button>
+        </div>
+    }
+    else
+    {
+        <button class="btn btn-outline-primary w-100 mb-3" @onclick="() => _addingExercise = true">+ Add Exercise</button>
+    }
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <label class="form-label small mb-0">Bodyweight (kg)</label>
+            <input type="number" step="0.1" class="form-control form-control-lg mb-3"
+                   value="@_session.BodyWeightKg" @onchange="OnBodyWeightChanged" />
+
+            <label class="form-label small mb-0">Notes</label>
+            <textarea class="form-control" rows="3" placeholder="How did it feel? Anything to remember for next time?"
+                      @onchange="OnNotesChanged">@_session.Notes</textarea>
+        </div>
+    </div>
 }
 else
 {
@@ -37,46 +87,182 @@ else
     private string _selectedDayName = string.Empty;
     private Models.DayProgram? _dayProgram;
     private Models.WorkoutSession? _session;
-    private List<Models.SetEntry> _mainPrevious = new();
-    private List<Models.SetEntry> _assistPrevious = new();
+    private readonly Dictionary<string, List<Models.SetEntry>> _previousSets = new();
+    private List<string> _customDayNames = new();
+
+    private bool _creatingNewDay;
+    private string _newDayName = string.Empty;
+
+    private bool _addingExercise;
+    private string _newExerciseName = string.Empty;
+
+    private (string Name, decimal Weight)? _celebration;
 
     protected override async Task OnInitializedAsync()
     {
         _today = DateOnly.FromDateTime(DateTime.Now);
         _dayProgram = WorkoutProgram.GetForToday();
         _selectedDayName = _dayProgram.DayName;
+
+        var allSessions = await Storage.GetAllSessionsAsync();
+        var hardcodedNames = WorkoutProgram.Days.Select(d => d.DayName).ToHashSet();
+        _customDayNames = allSessions
+            .Select(s => s.DayName)
+            .Distinct()
+            .Where(n => !hardcodedNames.Contains(n))
+            .OrderBy(n => n)
+            .ToList();
+
         await LoadSession();
     }
 
     private async Task OnDayChanged(ChangeEventArgs e)
     {
-        _selectedDayName = e.Value?.ToString() ?? _selectedDayName;
-        _dayProgram = WorkoutProgram.GetByName(_selectedDayName);
+        var value = e.Value?.ToString() ?? string.Empty;
+        if (value == "__new__")
+        {
+            _creatingNewDay = true;
+            return;
+        }
+
+        _creatingNewDay = false;
+        _selectedDayName = value;
+        _dayProgram = WorkoutProgram.GetByName(value);
         await LoadSession();
     }
 
-    private async Task LoadSession()
+    private async Task CreateNewDay()
     {
-        if (_dayProgram is null)
+        var name = _newDayName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
         {
             return;
         }
 
-        _session = await Storage.GetOrCreateSessionAsync(_today, _dayProgram.DayName);
-        _mainPrevious = await Storage.GetMostRecentSetsAsync(_dayProgram.MainLift.Name, _session.Id);
-        _assistPrevious = await Storage.GetMostRecentSetsAsync(_dayProgram.AssistLift.Name, _session.Id);
-    }
-
-    private Models.ExerciseLog GetLog(string exerciseName)
-    {
-        var log = _session!.Exercises.FirstOrDefault(e => e.ExerciseName == exerciseName);
-        if (log is null)
+        if (!_customDayNames.Contains(name) && WorkoutProgram.GetByName(name) is null)
         {
-            log = new Models.ExerciseLog { ExerciseName = exerciseName };
-            _session.Exercises.Add(log);
+            _customDayNames.Add(name);
+            _customDayNames.Sort();
         }
 
-        return log;
+        _selectedDayName = name;
+        _dayProgram = null;
+        _creatingNewDay = false;
+        _newDayName = string.Empty;
+        await LoadSession();
+    }
+
+    private void CancelNewDay()
+    {
+        _creatingNewDay = false;
+        _newDayName = string.Empty;
+    }
+
+    private async Task LoadSession()
+    {
+        _session = await Storage.GetOrCreateSessionAsync(_today, _selectedDayName);
+
+        if (_dayProgram is not null)
+        {
+            EnsureExerciseExists(_dayProgram.MainLift.Name);
+            EnsureExerciseExists(_dayProgram.AssistLift.Name);
+        }
+
+        _previousSets.Clear();
+        foreach (var log in _session.Exercises)
+        {
+            _previousSets[log.ExerciseName] = await Storage.GetMostRecentSetsAsync(log.ExerciseName, _session.Id);
+        }
+    }
+
+    private void EnsureExerciseExists(string name)
+    {
+        if (!_session!.Exercises.Any(e => e.ExerciseName == name))
+        {
+            _session.Exercises.Add(new Models.ExerciseLog { ExerciseName = name });
+        }
+    }
+
+    private Models.ExerciseDefinition GetExerciseDefinition(string name)
+    {
+        if (_dayProgram is not null)
+        {
+            if (_dayProgram.MainLift.Name == name)
+            {
+                return _dayProgram.MainLift;
+            }
+
+            if (_dayProgram.AssistLift.Name == name)
+            {
+                return _dayProgram.AssistLift;
+            }
+        }
+
+        return new Models.ExerciseDefinition { Name = name };
+    }
+
+    private List<Models.SetEntry> GetPreviousSets(string name) =>
+        _previousSets.TryGetValue(name, out var sets) ? sets : new();
+
+    private async Task AddExercise()
+    {
+        var name = _newExerciseName.Trim();
+        if (!string.IsNullOrWhiteSpace(name) &&
+            !_session!.Exercises.Any(e => string.Equals(e.ExerciseName, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _session.Exercises.Add(new Models.ExerciseLog { ExerciseName = name });
+            _previousSets[name] = await Storage.GetMostRecentSetsAsync(name, _session.Id);
+            await SaveSession();
+        }
+
+        _newExerciseName = string.Empty;
+        _addingExercise = false;
+    }
+
+    private async Task HandleSetAdded(Models.ExerciseLog log, Models.SetEntry set)
+    {
+        await SaveSession();
+
+        if (!set.IsWarmup)
+        {
+            var personalBest = await PersonalBests.CheckAndUpdateAsync(log.ExerciseName, set.Weight, set.Reps, _session!.Id);
+            if (personalBest is not null)
+            {
+                TriggerCelebration(log.ExerciseName, personalBest.Weight);
+            }
+        }
+    }
+
+    private async Task HandleSetRemoved(Models.ExerciseLog log)
+    {
+        await SaveSession();
+        var allSessions = await Storage.GetAllSessionsAsync();
+        await PersonalBests.RecomputeAsync(log.ExerciseName, allSessions);
+    }
+
+    private void TriggerCelebration(string name, decimal weight)
+    {
+        _celebration = (name, weight);
+        _ = AutoHideCelebrationAsync();
+    }
+
+    private async Task AutoHideCelebrationAsync()
+    {
+        await Task.Delay(3500);
+        _celebration = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnBodyWeightChanged(ChangeEventArgs e)
+    {
+        _session!.BodyWeightKg = decimal.TryParse(e.Value?.ToString(), out var value) ? value : null;
+        await SaveSession();
+    }
+
+    private async Task OnNotesChanged(ChangeEventArgs e)
+    {
+        _session!.Notes = e.Value?.ToString() ?? string.Empty;
+        await SaveSession();
     }
 
     private async Task SaveSession()

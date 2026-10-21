@@ -1,5 +1,7 @@
 @page "/history"
 @inject IWorkoutStorageService Storage
+@inject IPersonalBestService PersonalBests
+@inject IJSRuntime JS
 
 <PageTitle>Gym Tracker - History</PageTitle>
 
@@ -20,7 +22,7 @@ else
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><strong>@session.DayName</strong> - @session.Date.ToString("ddd, d MMM yyyy")</span>
-                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSession(session.Id)">Delete</button>
+                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSession(session)">Delete</button>
             </div>
             <div class="card-body">
                 @foreach (var exercise in session.Exercises.Where(ex => ex.Sets.Count > 0))
@@ -31,6 +33,14 @@ else
                             @string.Join(", ", exercise.Sets.Select(s => $"{s.Weight}kg x{s.Reps}{(s.IsWarmup ? " (w)" : "")}"))
                         </div>
                     </div>
+                }
+                @if (session.BodyWeightKg is not null)
+                {
+                    <div class="small text-muted">Bodyweight: @session.BodyWeightKg kg</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(session.Notes))
+                {
+                    <div class="small fst-italic mt-2">"@session.Notes"</div>
                 }
             </div>
         </div>
@@ -51,9 +61,24 @@ else
         _sessions = all.OrderByDescending(s => s.Date).ToList();
     }
 
-    private async Task DeleteSession(Guid id)
+    private async Task DeleteSession(Models.WorkoutSession session)
     {
-        await Storage.DeleteSessionAsync(id);
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete {session.DayName} - {session.Date:ddd, d MMM yyyy}? This can't be undone.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        var affectedExercises = session.Exercises.Select(e => e.ExerciseName).Distinct().ToList();
+
+        await Storage.DeleteSessionAsync(session.Id);
+
+        var remaining = await Storage.GetAllSessionsAsync();
+        foreach (var exerciseName in affectedExercises)
+        {
+            await PersonalBests.RecomputeAsync(exerciseName, remaining);
+        }
+
         await Load();
     }
 }

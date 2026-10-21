@@ -104,6 +104,16 @@ public class WorkoutStorageService : IWorkoutStorageService
         var sessions = await GetAllSessionsAsync();
         sessions.RemoveAll(s => s.Id == sessionId);
         await _localStorage.SetItemAsync(StorageKey, sessions);
+
+        try
+        {
+            await _cloudSync.DeleteSessionAsync(sessionId);
+        }
+        catch
+        {
+            // Offline - the session isn't gone server-side yet, so it could reappear on the next
+            // sync. Acceptable for a personal app; deleting again once back online clears it for good.
+        }
     }
 
     public async Task<List<SetEntry>> GetMostRecentSetsAsync(string exerciseName, Guid excludeSessionId)

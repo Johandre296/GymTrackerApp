@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject IAuthService Auth
 @inject IWorkoutStorageService Storage
+@inject IPersonalBestService PersonalBests
 @inject NavigationManager Navigation
 
 <div class="page">
@@ -32,6 +33,7 @@
         }
 
         await Storage.SyncWithCloudAsync();
+        await PersonalBests.SyncWithCloudAsync();
         _ready = true;
     }
 }

@@ -29,8 +29,8 @@ public static class WorkoutProgram
         },
     };
 
-    public static DayProgram GetByName(string dayName) =>
-        Days.FirstOrDefault(d => d.DayName == dayName) ?? Days[0];
+    public static DayProgram? GetByName(string dayName) =>
+        Days.FirstOrDefault(d => d.DayName == dayName);
 
     public static DayProgram GetForToday()
     {

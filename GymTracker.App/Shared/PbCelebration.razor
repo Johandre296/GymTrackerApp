@@ -1,0 +1,30 @@
+@if (Visible)
+{
+    <div class="pb-overlay">
+        @for (var i = 0; i < PieceCount; i++)
+        {
+            <span class="confetti-piece" style="@GetPieceStyle(i)"></span>
+        }
+        <div class="pb-banner">New PB! @ExerciseName - @Weight kg</div>
+    </div>
+}
+
+@code {
+    private const int PieceCount = 60;
+    private static readonly string[] Colors = { "#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93" };
+
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string ExerciseName { get; set; } = string.Empty;
+    [Parameter] public decimal Weight { get; set; }
+
+    private readonly Random _random = new();
+
+    private string GetPieceStyle(int i)
+    {
+        var left = _random.Next(0, 100);
+        var delay = (_random.NextDouble() * 0.6).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var duration = (2 + _random.NextDouble() * 1.5).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+        var color = Colors[i % Colors.Length];
+        return $"left:{left}%; background:{color}; animation-delay:{delay}s; animation-duration:{duration}s;";
+    }
+}

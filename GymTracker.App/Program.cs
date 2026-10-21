@@ -40,5 +40,6 @@ builder.Services.AddScoped<ICloudSyncService>(sp => new CloudSyncService(
     sp.GetRequiredService<IAuthService>()));
 
 builder.Services.AddScoped<IWorkoutStorageService, WorkoutStorageService>();
+builder.Services.AddScoped<IPersonalBestService, PersonalBestService>();
 
 await builder.Build().RunAsync();
