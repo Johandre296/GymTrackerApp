@@ -55,14 +55,14 @@ else
     {
         var filtered = FilteredSorted;
 
-        // The date axis always spans every entry, regardless of which categories are currently
-        // shown, so toggling Clothed/Not-clothed never rescales where points land - only the
-        // weight axis adapts to what's actually visible.
+        // Both axes always span every entry, regardless of which categories are currently shown,
+        // so toggling Clothed/Not-clothed never rescales the chart - a point's position always
+        // reflects its real date and weight, never where it'd fall among just the visible ones.
         var minDate = Entries.Min(e => e.Date);
         var maxDate = Entries.Max(e => e.Date);
 
-        var minWeight = filtered.Min(e => e.WeightKg);
-        var maxWeight = filtered.Max(e => e.WeightKg);
+        var minWeight = Entries.Min(e => e.WeightKg);
+        var maxWeight = Entries.Max(e => e.WeightKg);
         if (minWeight == maxWeight)
         {
             minWeight -= 1;
@@ -94,6 +94,25 @@ else
             sb.Append(CultureInfo.InvariantCulture, $"<text x=\"{FormatCoord(x)}\" y=\"{Height - 8}\" font-size=\"11\" text-anchor=\"{anchor}\" fill=\"#666\">{WebUtility.HtmlEncode(label)}</text>");
         }
 
+        void AppendPoint(double x, double y, string color, string dateLine, string weightLine)
+        {
+            var bubbleWidth = Math.Max(90, Math.Max(dateLine.Length, weightLine.Length) * 6 + 16);
+            var bubbleHeight = 36;
+            var bubbleLeft = Math.Clamp(x - bubbleWidth / 2, 2, Width - bubbleWidth - 2);
+            var bubbleTop = Math.Clamp(y - bubbleHeight - 10, 2, Height - bubbleHeight - 2);
+            var textCenter = bubbleLeft + bubbleWidth / 2;
+
+            sb.Append("<g class=\"cp\">");
+            sb.Append(CultureInfo.InvariantCulture, $"<circle cx=\"{FormatCoord(x)}\" cy=\"{FormatCoord(y)}\" r=\"8\" fill=\"transparent\" />");
+            sb.Append(CultureInfo.InvariantCulture, $"<circle cx=\"{FormatCoord(x)}\" cy=\"{FormatCoord(y)}\" r=\"3\" fill=\"{color}\" />");
+            sb.Append("<g class=\"cp-bubble\">");
+            sb.Append(CultureInfo.InvariantCulture, $"<rect x=\"{FormatCoord(bubbleLeft)}\" y=\"{FormatCoord(bubbleTop)}\" width=\"{FormatCoord(bubbleWidth)}\" height=\"{bubbleHeight}\" rx=\"4\" fill=\"#212529\" />");
+            sb.Append(CultureInfo.InvariantCulture, $"<text x=\"{FormatCoord(textCenter)}\" y=\"{FormatCoord(bubbleTop + 15)}\" font-size=\"10\" fill=\"#fff\" text-anchor=\"middle\">{WebUtility.HtmlEncode(dateLine)}</text>");
+            sb.Append(CultureInfo.InvariantCulture, $"<text x=\"{FormatCoord(textCenter)}\" y=\"{FormatCoord(bubbleTop + 28)}\" font-size=\"10\" fill=\"#fff\" text-anchor=\"middle\">{WebUtility.HtmlEncode(weightLine)}</text>");
+            sb.Append("</g>");
+            sb.Append("</g>");
+        }
+
         void AppendSeries(IEnumerable<BodyWeightEntry> points, string color, bool tagClothed)
         {
             var list = points.ToList();
@@ -106,8 +125,9 @@ else
             foreach (var p in list)
             {
                 var (x, y) = PointCoord(p, minDate, maxDate, minWeight, maxWeight);
-                var title = $"{p.Date:d MMM yyyy}: {FormatWeight(p.WeightKg)} kg{(p.IsClothed && tagClothed ? " (clothed)" : "")}";
-                sb.Append(CultureInfo.InvariantCulture, $"<circle cx=\"{FormatCoord(x)}\" cy=\"{FormatCoord(y)}\" r=\"3\" fill=\"{color}\"><title>{WebUtility.HtmlEncode(title)}</title></circle>");
+                var dateLine = p.Date.ToString("d MMM yyyy");
+                var weightLine = $"{FormatWeight(p.WeightKg)} kg{(p.IsClothed && tagClothed ? " (clothed)" : "")}";
+                AppendPoint(x, y, color, dateLine, weightLine);
             }
         }
 

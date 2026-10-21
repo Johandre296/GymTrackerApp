@@ -99,6 +99,16 @@ a, .btn-link {
     margin-right: 4px;
 }
 
+.bodyweight-chart .cp-bubble {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease-in-out;
+}
+
+.bodyweight-chart .cp:hover .cp-bubble {
+    opacity: 1;
+}
+
 .valid.modified:not([type=checkbox]) {
     outline: 1px solid #26b050;
 }
