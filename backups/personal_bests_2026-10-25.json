@@ -1,0 +1,6 @@
+[{"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Dips","weight":45,"reps":10,"session_id":"6639d0d7-dea0-454f-95a1-346da76eef2e","achieved_at":"2026-10-21T18:51:14.812+00:00"}, 
+ {"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Bench Press","weight":45,"reps":5,"session_id":"598846a5-9462-4b81-ad48-a094ada590d2","achieved_at":"2026-10-21T18:52:10.902+00:00"}, 
+ {"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Deadlift","weight":120,"reps":3,"session_id":"4e88a75e-73e8-4ade-a03c-0333ddd7d095","achieved_at":"2026-10-24T09:15:37.724+00:00"}, 
+ {"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Pull-ups","weight":0,"reps":5,"session_id":"4e88a75e-73e8-4ade-a03c-0333ddd7d095","achieved_at":"2026-10-24T09:36:38.039+00:00"}, 
+ {"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Squat","weight":100,"reps":5,"session_id":"e05e4cad-2fa0-46b3-a644-45201bd301af","achieved_at":"2026-10-24T11:40:24.311+00:00"}, 
+ {"user_id":"4e6ab8dd-732e-42dd-aad5-f22cdb98b662","exercise_name":"Leg Extension","weight":73,"reps":6,"session_id":"75552fab-b921-41a8-920d-73e86ed12e96","achieved_at":"2026-10-24T11:40:24.62+00:00"}]
