@@ -49,7 +49,17 @@
         <div class="row g-2 add-set-row">
             <div class="col-6">
                 <label class="form-label small mb-0">Weight (kg)</label>
-                <input type="number" step="2.5" class="form-control form-control-lg" @bind="_weight" />
+                @if (Exercise.AllowsNegativeWeight)
+                {
+                    <div class="input-group">
+                        <button type="button" class="btn btn-outline-secondary" style="width: 3rem" @onclick="ToggleSign">@(_isNegative ? "−" : "+")</button>
+                        <input type="number" step="2.5" min="0" class="form-control form-control-lg" @bind="_weightMagnitude" />
+                    </div>
+                }
+                else
+                {
+                    <input type="number" step="2.5" class="form-control form-control-lg" @bind="_weightMagnitude" />
+                }
             </div>
             <div class="col-6">
                 <label class="form-label small mb-0">Reps</label>
@@ -65,7 +75,7 @@
         </div>
         @if (Exercise.AllowsNegativeWeight)
         {
-            <small class="text-muted d-block mt-1">Machine-assisted: use a negative weight for assistance.</small>
+            <small class="text-muted d-block mt-1">Machine-assisted: type the assistance amount, the +/− button sets the sign (defaults to −).</small>
         }
     </div>
 </div>
@@ -79,15 +89,27 @@
     [Parameter] public bool CanRemove { get; set; }
     [Parameter] public EventCallback OnExerciseRemoved { get; set; }
 
-    private decimal _weight;
+    private decimal _weightMagnitude;
     private int _reps;
     private bool _isWarmup;
+    private bool _isNegative;
+
+    protected override void OnInitialized()
+    {
+        // Assisted exercises (machine-reduced weight) are negative far more often than not, so
+        // default the sign there - mobile numeric keypads frequently have no minus key at all,
+        // so typing a negative value directly often isn't even possible.
+        _isNegative = Exercise.AllowsNegativeWeight;
+    }
+
+    private void ToggleSign() => _isNegative = !_isNegative;
 
     private async Task AddSet()
     {
+        var weight = Exercise.AllowsNegativeWeight && _isNegative ? -Math.Abs(_weightMagnitude) : _weightMagnitude;
         var set = new SetEntry
         {
-            Weight = _weight,
+            Weight = weight,
             Reps = _reps,
             IsWarmup = _isWarmup,
         };
