@@ -1,8 +1,10 @@
 @page "/"
 @using GymTracker.App.Data
+@implements IAsyncDisposable
 @inject IWorkoutStorageService Storage
 @inject IPersonalBestService PersonalBests
 @inject IBodyWeightService BodyWeights
+@inject IJSRuntime JS
 
 <PageTitle>Gym Tracker - Workout</PageTitle>
 
@@ -26,6 +28,14 @@
     <small class="text-muted">@_today.ToString("dddd, d MMMM yyyy")</small>
 </div>
 
+@if (_dayProgram is not null)
+{
+    <div class="form-check form-switch mb-3">
+        <input type="checkbox" class="form-check-input" id="unlock-cards" checked="@_cardsUnlocked" @onchange="OnUnlockChanged" />
+        <label class="form-check-label" for="unlock-cards">@(_cardsUnlocked ? "🔓" : "🔒") Draggable exercise cards</label>
+    </div>
+}
+
 @if (_creatingNewDay)
 {
     <div class="input-group mb-3">
@@ -38,16 +48,20 @@
 
 @if (_session is not null)
 {
-    @foreach (var log in _session.Exercises)
-    {
-        <ExerciseLogCard Exercise="GetExerciseDefinition(log.ExerciseName)"
-                          Log="log"
-                          PreviousSets="GetPreviousSets(log.ExerciseName)"
-                          OnSetAdded="(set) => HandleSetAdded(log, set)"
-                          OnSetRemoved="() => HandleSetRemoved(log)"
-                          CanRemove="IsAdHocExercise(log.ExerciseName)"
-                          OnExerciseRemoved="() => RemoveExercise(log)" />
-    }
+    <div @ref="_exerciseListRef">
+        @foreach (var log in _session.Exercises)
+        {
+            <ExerciseLogCard @key="log.ExerciseName"
+                              Exercise="GetExerciseDefinition(log.ExerciseName)"
+                              Log="log"
+                              PreviousSets="GetPreviousSets(log.ExerciseName)"
+                              OnSetAdded="(set) => HandleSetAdded(log, set)"
+                              OnSetRemoved="() => HandleSetRemoved(log)"
+                              CanRemove="IsAdHocExercise(log.ExerciseName)"
+                              OnExerciseRemoved="() => RemoveExercise(log)"
+                              CanDrag="IsDraggable" />
+        }
+    </div>
 
     @if (_session.Exercises.Count == 0)
     {
@@ -115,6 +129,14 @@ else
     private decimal? _bodyWeightKg;
     private bool _isClothed;
 
+    private const string SortableKey = "home-exercises";
+    private ElementReference _exerciseListRef;
+    private DotNetObjectReference<Home>? _dotNetRef;
+    private bool _sortableInitialized;
+    private bool _cardsUnlocked;
+
+    private bool IsDraggable => _dayProgram is null || _cardsUnlocked;
+
     protected override async Task OnInitializedAsync()
     {
         _today = DateOnly.FromDateTime(DateTime.Now);
@@ -149,7 +171,9 @@ else
         _creatingNewDay = false;
         _selectedDayName = value;
         _dayProgram = WorkoutProgram.GetByName(value);
+        _cardsUnlocked = false;
         await LoadSession();
+        await UpdateSortableStateAsync();
     }
 
     private async Task CreateNewDay()
@@ -171,6 +195,7 @@ else
         _creatingNewDay = false;
         _newDayName = string.Empty;
         await LoadSession();
+        await UpdateSortableStateAsync();
     }
 
     private void CancelNewDay()
@@ -326,6 +351,60 @@ else
         if (_session is not null)
         {
             await Storage.SaveSessionAsync(_session);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_sortableInitialized && _session is not null)
+        {
+            _sortableInitialized = true;
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("gymTrackerSortable.init", SortableKey, _exerciseListRef, _dotNetRef, !IsDraggable);
+        }
+    }
+
+    private async Task OnUnlockChanged(ChangeEventArgs e)
+    {
+        _cardsUnlocked = e.Value is bool value && value;
+        await UpdateSortableStateAsync();
+    }
+
+    private async Task UpdateSortableStateAsync()
+    {
+        if (_sortableInitialized)
+        {
+            await JS.InvokeVoidAsync("gymTrackerSortable.setDisabled", SortableKey, !IsDraggable);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnReorder(int oldIndex, int newIndex)
+    {
+        if (_session is null || oldIndex == newIndex
+            || oldIndex < 0 || oldIndex >= _session.Exercises.Count
+            || newIndex < 0 || newIndex >= _session.Exercises.Count)
+        {
+            return;
+        }
+
+        var item = _session.Exercises[oldIndex];
+        _session.Exercises.RemoveAt(oldIndex);
+        _session.Exercises.Insert(newIndex, item);
+        await SaveSession();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+        try
+        {
+            await JS.InvokeVoidAsync("gymTrackerSortable.destroy", SortableKey);
+        }
+        catch
+        {
+            // Best-effort cleanup - the page may already be tearing down.
         }
     }
 }

@@ -3,7 +3,13 @@
 
 <div class="card exercise-card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <span class="fw-bold">@Exercise.Name</span>
+        <div class="d-flex align-items-center gap-2">
+            @if (CanDrag)
+            {
+                <span class="drag-handle" title="Drag to reorder">⠿</span>
+            }
+            <span class="fw-bold">@Exercise.Name</span>
+        </div>
         <div class="d-flex align-items-center gap-2">
             @if (PreviousSets.Count > 0)
             {
@@ -49,17 +55,10 @@
         <div class="row g-2 add-set-row">
             <div class="col-6">
                 <label class="form-label small mb-0">Weight (kg)</label>
-                @if (Exercise.AllowsNegativeWeight)
-                {
-                    <div class="input-group">
-                        <button type="button" class="btn btn-outline-secondary" style="width: 3rem" @onclick="ToggleSign">@(_isNegative ? "−" : "+")</button>
-                        <input type="number" step="2.5" min="0" class="form-control form-control-lg" @bind="_weightMagnitude" />
-                    </div>
-                }
-                else
-                {
-                    <input type="number" step="2.5" class="form-control form-control-lg" @bind="_weightMagnitude" />
-                }
+                <div class="input-group">
+                    <button type="button" class="btn btn-outline-secondary" style="width: 3rem" @onclick="ToggleSign">@(_isNegative ? "−" : "+")</button>
+                    <input type="number" step="2.5" min="0" class="form-control form-control-lg" @bind="_weightMagnitude" />
+                </div>
             </div>
             <div class="col-6">
                 <label class="form-label small mb-0">Reps</label>
@@ -88,6 +87,7 @@
     [Parameter] public EventCallback OnSetRemoved { get; set; }
     [Parameter] public bool CanRemove { get; set; }
     [Parameter] public EventCallback OnExerciseRemoved { get; set; }
+    [Parameter] public bool CanDrag { get; set; }
 
     private decimal _weightMagnitude;
     private int _reps;
@@ -106,7 +106,7 @@
 
     private async Task AddSet()
     {
-        var weight = Exercise.AllowsNegativeWeight && _isNegative ? -Math.Abs(_weightMagnitude) : _weightMagnitude;
+        var weight = _isNegative ? -Math.Abs(_weightMagnitude) : _weightMagnitude;
         var set = new SetEntry
         {
             Weight = weight,
